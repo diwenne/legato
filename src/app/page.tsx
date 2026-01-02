@@ -4,14 +4,19 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import AbcRenderer from "@/components/AbcRenderer";
 
 const DEFAULT_ABC = `X:1
-T:Legato Demo
-M:4/4
-L:1/8
-K:C
-V:1 clef=treble name="Right Hand"
-|: c2 e2 g2 c'2 | d'2 c'2 b2 g2 | a2 g2 f2 e2 | d2 c2 B2 c2 :|
-V:2 clef=bass name="Left Hand"
-|: C,4 E,4 | G,4 E,4 | F,4 D,4 | G,4 C,4 :|
+T:Für Elise
+C:Ludwig van Beethoven
+M:3/8
+L:1/16
+Q:1/8=65
+K:Am
+%%MIDI program 0
+!pp! e'^d' | !p! e'^d' e'^d' e'B d'c' | !mp! A4 z CEA | B4 z E^GB | !mf! c'4 z Ee'^d' |
+!p! e'^d' e'^d' e'Bd'c' | A4 z CEA | B4 z Ec'B |1 !pp! A4 :|2 !pp! A4 ||
+!mf! Bc'd' | !f! e4 Ge'c' | d4 Fd'B | !mf! c4 EA^d | !p! e4 z ee |
+!pp! e4 ^de | fe4 d | !mf! c4 BA | !p! c4 z Ee'^d' |
+!p! e'^d' e'^d' e'Bd'c' | !mp! A4 z CEA | B4 z E^GB | !mf! c'4 z Ee'^d' |
+!p! e'^d' e'^d' e'Bd'c' | A4 z CEA | B4 z Ec'B | !pp! A4 z2 |]
 `;
 
 export default function Home() {
