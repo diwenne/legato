@@ -100,48 +100,62 @@ export default function AbcRenderer({
 
   // Initialize and render
   useEffect(() => {
+    // Only run on client side (abcjs needs DOM)
+    if (typeof window === "undefined") return;
+    
     if (containerRef.current && notation) {
-      const visualObj = abcjs.renderAbc(containerRef.current, notation, {
-        responsive: "resize",
-        add_classes: true,
-        clickListener: (
-          abcElem: unknown,
-          _tuneNumber: number,
-          _classes: string,
-          analysis: unknown
-        ) => {
-          const analysisObj = analysis as
-            | { startChar?: number; endChar?: number }
-            | undefined;
-          if (
-            onElementClick &&
-            analysisObj &&
-            typeof analysisObj.startChar === "number" &&
-            typeof analysisObj.endChar === "number"
-          ) {
-            onElementClick({
-              start: analysisObj.startChar,
-              end: analysisObj.endChar,
-            });
-          }
-        },
-      });
+      try {
+        const visualObj = abcjs.renderAbc(containerRef.current, notation, {
+          responsive: "resize",
+          add_classes: true,
+          clickListener: (
+            abcElem: unknown,
+            _tuneNumber: number,
+            _classes: string,
+            analysis: unknown
+          ) => {
+            const analysisObj = analysis as
+              | { startChar?: number; endChar?: number }
+              | undefined;
+            if (
+              onElementClick &&
+              analysisObj &&
+              typeof analysisObj.startChar === "number" &&
+              typeof analysisObj.endChar === "number"
+            ) {
+              onElementClick({
+                start: analysisObj.startChar,
+                end: analysisObj.endChar,
+              });
+            }
+          },
+        });
 
-      visualObjRef.current = visualObj;
+        // Check if render was successful
+        if (visualObj && visualObj.length > 0) {
+          visualObjRef.current = visualObj;
+        } else {
+          visualObjRef.current = null;
+          console.warn("abcjs: No valid tunes rendered from notation");
+        }
 
-      // Fix SVG colors after render
-      const svg = containerRef.current.querySelector("svg");
-      if (svg) {
-        svg.querySelectorAll("path").forEach((path) => {
-          path.setAttribute("fill", "#1a1a1a");
-          path.setAttribute("stroke", "#1a1a1a");
-        });
-        svg.querySelectorAll("text").forEach((text) => {
-          text.setAttribute("fill", "#1a1a1a");
-        });
-        svg.querySelectorAll("line").forEach((line) => {
-          line.setAttribute("stroke", "#1a1a1a");
-        });
+        // Fix SVG colors after render
+        const svg = containerRef.current.querySelector("svg");
+        if (svg) {
+          svg.querySelectorAll("path").forEach((path) => {
+            path.setAttribute("fill", "#1a1a1a");
+            path.setAttribute("stroke", "#1a1a1a");
+          });
+          svg.querySelectorAll("text").forEach((text) => {
+            text.setAttribute("fill", "#1a1a1a");
+          });
+          svg.querySelectorAll("line").forEach((line) => {
+            line.setAttribute("stroke", "#1a1a1a");
+          });
+        }
+      } catch (err) {
+        console.error("abcjs render error:", err);
+        visualObjRef.current = null;
       }
     }
 
