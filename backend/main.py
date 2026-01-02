@@ -109,14 +109,6 @@ async def synthesize(request: SynthesizeRequest):
     2. Export to MIDI
     3. Synthesize MIDI to audio with FluidSynth
     """
-    try:
-        import music21
-    except ImportError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Missing dependency: {e}. Run: pip install music21"
-        )
-
     # Find SoundFont
     soundfont = find_soundfont()
     if soundfont is None:
@@ -133,23 +125,30 @@ async def synthesize(request: SynthesizeRequest):
     midi_path = None
     audio_path = None
     
+    # Create temp files
+    with tempfile.NamedTemporaryFile(suffix=".abc", delete=False, mode="w") as abc_file:
+        abc_file.write(abc_content)
+        abc_path = abc_file.name
+
+    with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as midi_file:
+        midi_path = midi_file.name
+    
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_file:
+        audio_path = audio_file.name
+
     try:
-        # Parse ABC notation
-        logger.info("Parsing ABC notation...")
-        score = music21.converter.parse(abc_content, format="abc")
+        # Convert ABC to MIDI using abc2midi
+        logger.info(f"Converting ABC to MIDI: {abc_path} -> {midi_path}")
+        convert_cmd = ["abc2midi", abc_path, "-o", midi_path]
+        result = subprocess.run(convert_cmd, capture_output=True, text=True, timeout=10)
         
-        # Create temp files
-        with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as midi_file:
-            midi_path = midi_file.name
-        
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_file:
-            audio_path = audio_file.name
+        if result.returncode != 0:
+            logger.error(f"abc2midi error: {result.stderr}")
+            # If standard error is empty, check stdout (abc2midi often prints errors there)
+            detail = result.stderr if result.stderr else result.stdout
+            raise Exception(f"abc2midi failed: {detail}")
 
-        # Export to MIDI
-        logger.info(f"Writing MIDI to {midi_path}...")
-        score.write("midi", fp=midi_path)
-
-        # Synthesize to audio using direct FluidSynth call
+        # Synthesize to MIDI using direct FluidSynth call
         logger.info(f"Synthesizing with SoundFont: {soundfont}")
         success = fluidsynth_midi_to_wav(midi_path, audio_path, str(soundfont))
         
@@ -159,6 +158,8 @@ async def synthesize(request: SynthesizeRequest):
         # Clean up MIDI file
         if midi_path and os.path.exists(midi_path):
             os.unlink(midi_path)
+        if 'abc_path' in locals() and abc_path and os.path.exists(abc_path):
+            os.unlink(abc_path)
 
         # Return audio file
         logger.info(f"Returning audio file: {audio_path} ({os.path.getsize(audio_path)} bytes)")
@@ -172,6 +173,8 @@ async def synthesize(request: SynthesizeRequest):
     except Exception as e:
         logger.error(f"Synthesis error: {e}")
         # Clean up temp files on error
+        if 'abc_path' in locals() and abc_path and os.path.exists(abc_path):
+            os.unlink(abc_path)
         if midi_path and os.path.exists(midi_path):
             os.unlink(midi_path)
         if audio_path and os.path.exists(audio_path):
