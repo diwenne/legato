@@ -55,3 +55,21 @@ body {
   fill: #1a1a1a !important;
 }
 
+/* Playback cursor line */
+.abcjs-cursor {
+  stroke: #10b981 !important;
+  stroke-width: 3px;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.5));
+}
+
+/* Highlight current notes during playback */
+.abcjs-highlight path,
+.abcjs-highlight rect {
+  fill: #10b981 !important;
+  stroke: #10b981 !important;
+}
+
+.abcjs-highlight text {
+  fill: #10b981 !important;
+}

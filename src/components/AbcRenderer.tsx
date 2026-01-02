@@ -8,6 +8,83 @@ interface AbcRendererProps {
   onElementClick?: (position: { start: number; end: number }) => void;
 }
 
+// Cursor control class for playback visualization
+class CursorControl {
+  private cursor: SVGLineElement | null = null;
+  private svg: SVGSVGElement | null = null;
+  private lastHighlighted: SVGElement[] = [];
+
+  onStart() {
+    // Remove any existing cursor
+    if (this.cursor) {
+      this.cursor.remove();
+    }
+  }
+
+  onEvent(event: {
+    elements?: SVGElement[][];
+    measureStart?: boolean;
+    left?: number;
+    top?: number;
+    height?: number;
+  }) {
+    // Remove previous highlights
+    this.lastHighlighted.forEach((el) => {
+      el.classList.remove("abcjs-highlight");
+    });
+    this.lastHighlighted = [];
+
+    // Highlight current notes
+    if (event.elements) {
+      event.elements.forEach((elementGroup) => {
+        elementGroup.forEach((element) => {
+          if (element) {
+            element.classList.add("abcjs-highlight");
+            this.lastHighlighted.push(element);
+
+            // Create/move cursor line
+            if (!this.svg) {
+              this.svg = element.closest("svg");
+            }
+            if (this.svg && event.left !== undefined && event.top !== undefined && event.height !== undefined) {
+              this.updateCursor(event.left, event.top, event.height);
+            }
+          }
+        });
+      });
+    }
+  }
+
+  private updateCursor(left: number, top: number, height: number) {
+    if (!this.svg) return;
+
+    if (!this.cursor) {
+      this.cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      this.cursor.setAttribute("class", "abcjs-cursor");
+      this.cursor.setAttribute("stroke", "#10b981");
+      this.cursor.setAttribute("stroke-width", "2");
+      this.svg.appendChild(this.cursor);
+    }
+
+    this.cursor.setAttribute("x1", String(left));
+    this.cursor.setAttribute("x2", String(left));
+    this.cursor.setAttribute("y1", String(top));
+    this.cursor.setAttribute("y2", String(top + height));
+  }
+
+  onFinished() {
+    // Remove highlights and cursor
+    this.lastHighlighted.forEach((el) => {
+      el.classList.remove("abcjs-highlight");
+    });
+    this.lastHighlighted = [];
+    if (this.cursor) {
+      this.cursor.remove();
+      this.cursor = null;
+    }
+  }
+}
+
 export default function AbcRenderer({
   notation,
   onElementClick,
@@ -15,8 +92,11 @@ export default function AbcRenderer({
   const containerRef = useRef<HTMLDivElement>(null);
   const audioControlRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const synthRef = useRef<abcjs.synth.CreateSynth | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const synthRef = useRef<any>(null);
   const visualObjRef = useRef<abcjs.TuneObject[] | null>(null);
+  const cursorControlRef = useRef<CursorControl | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Initialize and render
   useEffect(() => {
@@ -65,11 +145,17 @@ export default function AbcRenderer({
       }
     }
 
-    // Cleanup: stop playback when notation changes
+    // Cleanup
     return () => {
       if (synthRef.current) {
         synthRef.current.stop();
         setIsPlaying(false);
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      if (cursorControlRef.current) {
+        cursorControlRef.current.onFinished();
       }
     };
   }, [notation, onElementClick]);
@@ -78,13 +164,23 @@ export default function AbcRenderer({
     if (isPlaying && synthRef.current) {
       synthRef.current.stop();
       setIsPlaying(false);
+      if (cursorControlRef.current) {
+        cursorControlRef.current.onFinished();
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
       return;
     }
 
     if (!visualObjRef.current || visualObjRef.current.length === 0) return;
 
     try {
-      // Create synth
+      // Initialize cursor control
+      const cursorControl = new CursorControl();
+      cursorControlRef.current = cursorControl;
+
+      // Create synth with timing callbacks
       const synth = new abcjs.synth.CreateSynth();
       await synth.init({
         visualObj: visualObjRef.current[0],
@@ -93,20 +189,31 @@ export default function AbcRenderer({
         },
       });
 
+      // Prime the audio
       await synth.prime();
       synthRef.current = synth;
-      
-      synth.start();
-      setIsPlaying(true);
 
-      // Listen for end of playback
-      const checkPlaybackEnded = setInterval(() => {
-        // Check if playback has finished
-        if (synth.getIsRunning && !synth.getIsRunning()) {
-          setIsPlaying(false);
-          clearInterval(checkPlaybackEnded);
-        }
-      }, 500);
+      // Start cursor
+      cursorControl.onStart();
+
+      // Setup timing callback using abcjs TimingCallbacks
+      const timingCallbacks = new abcjs.TimingCallbacks(visualObjRef.current[0], {
+        eventCallback: (event: unknown) => {
+          if (event) {
+            cursorControl.onEvent(event as Parameters<CursorControl["onEvent"]>[0]);
+          } else {
+            // Playback finished
+            cursorControl.onFinished();
+            setIsPlaying(false);
+          }
+          return undefined;
+        },
+      });
+
+      // Start playback
+      synth.start();
+      timingCallbacks.start();
+      setIsPlaying(true);
 
     } catch (err) {
       console.error("Audio playback error:", err);
