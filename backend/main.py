@@ -4,6 +4,7 @@ Uses music21 for ABC parsing and FluidSynth for high-quality audio synthesis.
 """
 
 import os
+import subprocess
 import tempfile
 import logging
 from pathlib import Path
@@ -47,15 +48,43 @@ def find_soundfont() -> Path | None:
     return None
 
 
+def fluidsynth_midi_to_wav(midi_path: str, wav_path: str, soundfont_path: str) -> bool:
+    """
+    Convert MIDI to WAV using FluidSynth command line.
+    This avoids issues with the midi2audio library.
+    """
+    cmd = [
+        "fluidsynth",
+        "-ni",  # No interactive mode, no shell
+        "-F", wav_path,  # Output file (must come before soundfont)
+        "-r", "44100",  # Sample rate
+        "-g", "1.0",  # Gain
+        soundfont_path,
+        midi_path,
+    ]
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        if result.returncode != 0:
+            logger.error(f"FluidSynth error: {result.stderr}")
+            return False
+        return os.path.exists(wav_path) and os.path.getsize(wav_path) > 0
+    except subprocess.TimeoutExpired:
+        logger.error("FluidSynth timed out")
+        return False
+    except Exception as e:
+        logger.error(f"FluidSynth exception: {e}")
+        return False
+
+
 class SynthesizeRequest(BaseModel):
     abc: str
-    format: str = "wav"  # wav or mp3
-
-
-class SynthesizeResponse(BaseModel):
-    success: bool
-    message: str
-    audio_url: str | None = None
+    format: str = "wav"
 
 
 @app.get("/health")
@@ -82,11 +111,10 @@ async def synthesize(request: SynthesizeRequest):
     """
     try:
         import music21
-        from midi2audio import FluidSynth
     except ImportError as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Missing dependency: {e}. Run: pip install music21 midi2audio"
+            detail=f"Missing dependency: {e}. Run: pip install music21"
         )
 
     # Find SoundFont
@@ -95,14 +123,16 @@ async def synthesize(request: SynthesizeRequest):
         raise HTTPException(
             status_code=500,
             detail=f"No SoundFont (.sf2) found in {SOUNDFONT_DIR}. "
-                   f"Download one from https://musical-artifacts.com/artifacts?formats=sf2 "
-                   f"and place it in the soundfonts folder."
+                   f"Download one from https://musical-artifacts.com/artifacts?formats=sf2"
         )
 
     abc_content = request.abc.strip()
     if not abc_content:
         raise HTTPException(status_code=400, detail="ABC notation is empty")
 
+    midi_path = None
+    audio_path = None
+    
     try:
         # Parse ABC notation
         logger.info("Parsing ABC notation...")
@@ -112,34 +142,40 @@ async def synthesize(request: SynthesizeRequest):
         with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as midi_file:
             midi_path = midi_file.name
         
-        output_suffix = ".wav" if request.format == "wav" else ".mp3"
-        with tempfile.NamedTemporaryFile(suffix=output_suffix, delete=False) as audio_file:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_file:
             audio_path = audio_file.name
 
         # Export to MIDI
         logger.info(f"Writing MIDI to {midi_path}...")
         score.write("midi", fp=midi_path)
 
-        # Synthesize to audio
+        # Synthesize to audio using direct FluidSynth call
         logger.info(f"Synthesizing with SoundFont: {soundfont}")
-        fs = FluidSynth(str(soundfont))
-        fs.midi_to_audio(midi_path, audio_path)
+        success = fluidsynth_midi_to_wav(midi_path, audio_path, str(soundfont))
+        
+        if not success:
+            raise Exception("FluidSynth synthesis failed")
 
         # Clean up MIDI file
-        os.unlink(midi_path)
+        if midi_path and os.path.exists(midi_path):
+            os.unlink(midi_path)
 
         # Return audio file
-        logger.info(f"Returning audio file: {audio_path}")
-        media_type = "audio/wav" if request.format == "wav" else "audio/mpeg"
+        logger.info(f"Returning audio file: {audio_path} ({os.path.getsize(audio_path)} bytes)")
         
         return FileResponse(
             audio_path,
-            media_type=media_type,
-            filename=f"legato_output{output_suffix}",
+            media_type="audio/wav",
+            filename="legato_output.wav",
         )
 
     except Exception as e:
         logger.error(f"Synthesis error: {e}")
+        # Clean up temp files on error
+        if midi_path and os.path.exists(midi_path):
+            os.unlink(midi_path)
+        if audio_path and os.path.exists(audio_path):
+            os.unlink(audio_path)
         raise HTTPException(status_code=500, detail=str(e))
 
 

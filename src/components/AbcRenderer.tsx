@@ -235,33 +235,116 @@ export default function AbcRenderer({
     }
   }, [isPlaying]);
 
+  // Pro playback using Python backend
+  const [isProLoading, setIsProLoading] = useState(false);
+  const proAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const handlePlayPro = useCallback(async () => {
+    // Stop if already playing
+    if (proAudioRef.current) {
+      proAudioRef.current.pause();
+      proAudioRef.current = null;
+      return;
+    }
+
+    setIsProLoading(true);
+    
+    try {
+      const response = await fetch("http://localhost:8000/synthesize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ abc: notation }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Synthesis failed");
+      }
+
+      const blob = await response.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      
+      const audio = new Audio(audioUrl);
+      proAudioRef.current = audio;
+      
+      audio.onended = () => {
+        proAudioRef.current = null;
+        URL.revokeObjectURL(audioUrl);
+      };
+      
+      await audio.play();
+    } catch (err) {
+      console.error("Pro playback error:", err);
+      alert(`Pro playback error: ${err}`);
+    } finally {
+      setIsProLoading(false);
+    }
+  }, [notation]);
+
   return (
     <div className="relative w-full h-full">
       {/* Hidden audio control div */}
       <div ref={audioControlRef} className="hidden" />
       
-      {/* Play/Stop Button */}
-      <button
-        onClick={handlePlayStop}
-        className="absolute top-2 right-2 z-10 flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white text-sm rounded-md transition-colors shadow-md"
-      >
-        {isPlaying ? (
-          <>
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <rect x="6" y="4" width="4" height="16" />
-              <rect x="14" y="4" width="4" height="16" />
-            </svg>
-            Stop
-          </>
-        ) : (
-          <>
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <polygon points="5,3 19,12 5,21" />
-            </svg>
-            Play
-          </>
-        )}
-      </button>
+      {/* Play Buttons */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+        {/* Basic Play (abcjs) */}
+        <button
+          onClick={handlePlayStop}
+          className="flex items-center gap-2 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded-md transition-colors shadow-md"
+          title="Basic playback (abcjs synth)"
+        >
+          {isPlaying ? (
+            <>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+              Stop
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+              Play
+            </>
+          )}
+        </button>
+        
+        {/* Pro Play (FluidSynth backend) */}
+        <button
+          onClick={handlePlayPro}
+          disabled={isProLoading}
+          className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-sm rounded-md transition-colors shadow-md"
+          title="High-quality playback (FluidSynth)"
+        >
+          {isProLoading ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Loading...
+            </>
+          ) : proAudioRef.current ? (
+            <>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+              Stop Pro
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+              Play Pro ✨
+            </>
+          )}
+        </button>
+      </div>
 
       {/* Sheet Music Container */}
       <div
