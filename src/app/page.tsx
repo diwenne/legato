@@ -61,7 +61,16 @@ export default function Home() {
           </h1>
           <span className="text-xs text-zinc-500">The AI-Native Composer</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <a
+            href="https://abcnotation.com/wiki/abc:standard:v2.1"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-zinc-400 bg-zinc-700 hover:bg-zinc-600 px-2 py-1 rounded transition-colors"
+            title="Learn ABC Notation"
+          >
+            ? ABC Guide
+          </a>
           <span className="text-xs text-zinc-500 bg-zinc-700 px-2 py-1 rounded">
             Cmd+K for AI
           </span>
